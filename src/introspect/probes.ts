@@ -140,19 +140,15 @@ export function readRoutes(): string[] {
 export function readChunkManifest(): string[] {
   const g = globalThis as any;
 
-  const viteMapDeps = g.__vite__mapDeps;
-  if (viteMapDeps && Array.isArray(viteMapDeps.viteFileDeps)) {
-    return viteMapDeps.viteFileDeps.slice();
-  }
-
   const webpackRequire = g.__webpack_require__;
   const urlHelper = webpackRequire?.u;
 
   if (typeof urlHelper !== 'function') {
-    // Vite only defines __vite__mapDeps when a dynamic import carries CSS or
-    // asset dependencies. Without it the runtime cannot enumerate chunks that
-    // have not loaded; the best available signal is what the document
-    // references. Unloaded chunks are recovered offline from the entry source.
+    // Vite has no readable equivalent. Its dep list lives in a `const` inside
+    // a module chunk — never on the page's global scope, whatever the docs for
+    // __vite__mapDeps suggest — so the only signal available here is what the
+    // document references, which is the entry and its modulepreloads. The lazy
+    // route chunks are recovered instead by parsing the captured script body.
     const doc = g.document;
     if (doc && doc.querySelectorAll) {
       const referenced: string[] = [];
