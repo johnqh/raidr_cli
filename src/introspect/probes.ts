@@ -147,26 +147,38 @@ export function readChunkManifest(): string[] {
     // Vite has no readable equivalent. Its dep list lives in a `const` inside
     // a module chunk — never on the page's global scope, whatever the docs for
     // __vite__mapDeps suggest — so the only signal available here is what the
-    // document references, which is the entry and its modulepreloads. The lazy
-    // route chunks are recovered instead by parsing the captured script body.
+    // document references. Lazy route chunks are recovered separately, by
+    // parsing the captured script body.
+    //
+    // Every script counts, not just `type=module` under `/assets/`: that pair
+    // describes a Vite build and nothing else, and required together they
+    // found nothing at all on Next.js, webpack and CRA apps. Chunks also
+    // routinely sit on a CDN under another origin, so the path is what is
+    // kept — `loadedChunks` joins it to a request URL by suffix.
     const doc = g.document;
     if (doc && doc.querySelectorAll) {
       const referenced: string[] = [];
       const add = (value: unknown): void => {
-        const path = String(value ?? '');
-        if (!path) return;
-        const match = /\/assets\/[^"'\s)]+\.js/.exec(path);
-        if (match && referenced.indexOf(match[0].slice(1)) < 0) {
-          referenced.push(match[0].slice(1));
-        }
+        const raw = String(value ?? '');
+        if (!raw) return;
+
+        const withoutQuery = String(raw.split('?')[0]).split('#')[0] as string;
+        if (!/\.js$/i.test(withoutQuery)) return;
+
+        // Strip scheme and host, keeping the path. A template placeholder in
+        // documentation is not a chunk.
+        const path = withoutQuery.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]+/i, '');
+        const chunk = path.replace(/^\/+/, '');
+        if (!chunk || /[{}$]/.test(chunk)) return;
+        if (referenced.indexOf(chunk) < 0) referenced.push(chunk);
       };
       for (const script of Array.prototype.slice.call(
-        doc.querySelectorAll('script[type="module"][src]')
+        doc.querySelectorAll('script[src]')
       ) as any[]) {
         add(script.getAttribute('src'));
       }
       for (const link of Array.prototype.slice.call(
-        doc.querySelectorAll('link[rel="modulepreload"][href]')
+        doc.querySelectorAll('link[rel="modulepreload"][href], link[rel="preload"][as="script"][href]')
       ) as any[]) {
         add(link.getAttribute('href'));
       }
