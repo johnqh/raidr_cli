@@ -1,6 +1,6 @@
 {
   "name": "@sudobility/raidr_cli",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Reconstruct a web app from an raidr capture bundle",
   "license": "BUSL-1.1",
   "author": "Sudobility Inc.",
@@ -39,13 +39,12 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
     "test:unit": "bun test tests/bundle tests/commands tests/fixtures tests/introspect tests/skills tests/stages tests/roundTrip.test.ts",
     "fixtures:build": "bun run scripts/buildFixtureApps.ts",
     "fixtures:capture": "bun run scripts/captureFixture.ts"
   },
   "dependencies": {
-    "@sudobility/raidr_lib": "^0.0.6",
+    "@sudobility/raidr_lib": "^0.0.7",
     "fflate": "^0.8.2",
     "hono": "^4.6.0",
     "prettier": "^3.6.2"

@@ -5,7 +5,7 @@
     "": {
       "name": "@sudobility/raidr_cli",
       "dependencies": {
-        "@sudobility/raidr_lib": "^0.0.6",
+        "@sudobility/raidr_lib": "^0.0.7",
         "fflate": "^0.8.2",
         "hono": "^4.6.0",
         "prettier": "^3.6.2",
@@ -18,7 +18,7 @@
     },
   },
   "packages": {
-    "@sudobility/raidr_lib": ["@sudobility/raidr_lib@0.0.6", "", { "dependencies": { "fflate": "^0.8.2" } }, "sha512-ZXDXZCiBr95FnSK/PF/yBFoSIEsKX1ZZrSgO8GytA9vg/2l32Pa1m/eDdCnKkVUAutaGVn3nlfrdJx9RFiTUBA=="],
+    "@sudobility/raidr_lib": ["@sudobility/raidr_lib@0.0.7", "", { "dependencies": { "fflate": "^0.8.2" } }, "sha512-dvt+YDMg3NRk2i1qEGWDBpJKlGcf2rvmDXK/hT5AP3VRucvMVjRdUGYNCTfNEWc/ju1bEbwF1rDRuqY6AqFk2A=="],
 
     "@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
 
