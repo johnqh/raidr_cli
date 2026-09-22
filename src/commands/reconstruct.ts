@@ -108,6 +108,9 @@ export async function reconstruct(options: {
 
   // Stage 4 — API model, plus the recordings the replay server serves.
   const samples: EndpointSample[] = [];
+  // Parallel to `samples`, index for index: the real captured content-type,
+  // for the bodies that were not JSON (see below).
+  const responseContentTypes: string[] = [];
   const recordings: Record<
     string,
     Array<{ status: number; headers: Record<string, string>; body: unknown }>
@@ -115,32 +118,48 @@ export async function reconstruct(options: {
 
   for (const request of bundle.requests) {
     if (!isApiCall(request)) continue;
+    // A response body that fails JSON.parse is not a missing capture — CDP
+    // still recorded the real bytes, they are just not JSON (Next.js RSC
+    // navigation fetches serve `text/x-component`, for example). Falling back
+    // to the raw text instead of `undefined` is the difference between every
+    // client-side route transition working and every one of them 501ing.
+    const responseBody =
+      request.responseBodyHash === null
+        ? undefined
+        : (bundle.json(request.responseBodyHash) ?? bundle.text(request.responseBodyHash));
     samples.push({
       method: request.method,
       url: request.url,
       status: request.status,
       requestBody:
         request.requestBodyHash === null ? null : bundle.json(request.requestBodyHash),
-      responseBody:
-        request.responseBodyHash === null
-          ? undefined
-          : bundle.json(request.responseBodyHash),
+      responseBody: responseBody ?? undefined,
       requestHeaders: request.requestHeaders,
     });
+    responseContentTypes.push(
+      request.responseHeaders['content-type'] ?? request.mimeType ?? ''
+    );
   }
 
   const api = buildApiModel(samples);
   await writeJson('04-api-model.json', api);
 
-  for (const sample of samples) {
-    if (sample.responseBody === undefined) continue;
+  samples.forEach((sample, index) => {
+    if (sample.responseBody === undefined) return;
     // Re-derive the same key the model used. Substring matching on the template
     // would mis-bucket /api/users against /api/users/{id}.
     const key = endpointKey(sample.method, sample.url);
     const bucket = recordings[key] ?? [];
-    bucket.push({ status: sample.status ?? 200, headers: {}, body: sample.responseBody });
+    bucket.push({
+      status: sample.status ?? 200,
+      headers:
+        typeof sample.responseBody === 'string'
+          ? { 'content-type': responseContentTypes[index] ?? '' }
+          : {},
+      body: sample.responseBody,
+    });
     recordings[key] = bucket;
-  }
+  });
   await writeJson('recordings.json', recordings);
 
   // Stage 5 — route model.
@@ -233,7 +252,7 @@ export async function reconstruct(options: {
   project['src/api/types.ts'] = generateTypes(api);
   project['src/api/client.ts'] = generateClient(api);
   project['server/replay.ts'] =
-    mode === 'mirror' ? mirrorServer(api) : generateReplayServer(api);
+    mode === 'mirror' ? mirrorServer(bundle.manifest.origin) : generateReplayServer(api);
   project['server/recordings.json'] = JSON.stringify(recordings, null, 2);
 
   const filesWritten = await emitFiles(options.outDir, project);
@@ -357,9 +376,19 @@ function mirrorProject(input: {
     'bun run serve   # http://localhost:8787',
     '```',
     '',
-    'Static files are served from `public/`. API calls are replayed from',
-    '`server/recordings.json`; anything never captured returns 501 rather than',
-    'a plausible invention.',
+    'Static files (`/_next/static`, `/assets`) are served from `public/`.',
+    `Everything else — pages, client-side navigation fetches, and \`/api/*\` —`,
+    `is proxied straight through to the real backend at ${input.origin}, live.`,
+    'A frozen replay of one capture session can never get a real login or a',
+    'real chat reply right; the live backend can. `server/recordings.json`',
+    'and `.raidr/04-api-model.json` are kept as a record of what was captured,',
+    'but the server no longer reads them.',
+    '',
+    '**Known limitation:** an OAuth-style login (e.g. "Sign in with Google")',
+    `redirects through the provider and back to ${new URL(input.origin).host}`,
+    'itself, not back to localhost — the proxy cannot rewrite that callback.',
+    'Everything that does not leave the origin (auth checks, API calls, RSC',
+    'navigation) is fully live.',
     '',
     '## What is not here',
     '',
@@ -395,19 +424,81 @@ function mirrorProject(input: {
   return files;
 }
 
-function mirrorServer(api: Parameters<typeof generateReplayServer>[0]): string {
-  // The mirror lives in public/, not dist/, and extensionless pages were
-  // written as <path>/index.html — so the fallback resolves them there.
-  return generateReplayServer(api)
-    .replace("serveStatic({ root: './dist' })", "serveStatic({ root: './public' })")
-    .replace(
-      "app.get('*', serveStatic({ path: './dist/index.html' }));",
-      "app.get('*', (c, next) =>\n" +
-        "  serveStatic({\n" +
-        "    path: `./public${new URL(c.req.url).pathname.replace(/\\/$/, '')}/index.html`,\n" +
-        "  })(c, next)\n" +
-        ');'
-    );
+/**
+ * A frozen replay of one capture session cannot get a stateful flow like
+ * login right: the real backend answers "/api/auth/me" differently over
+ * time, an OAuth callback exchanges a code that has already been consumed,
+ * and a chat endpoint's reply depends on the live model. There is no honest
+ * mock for any of that. So for mirror mode, only genuinely immutable,
+ * content-hashed build output (`/_next/static`, `/assets`) is served from the
+ * local mirror; every dynamic request — pages, client-side navigation
+ * fetches, `/api/*` — is proxied straight through to the real origin, live.
+ */
+function mirrorServer(origin: string): string {
+  return [
+    '// Generated by raidr. Serves captured static assets locally and proxies',
+    '// everything dynamic to the real backend, live.',
+    'import { Hono } from "hono";',
+    'import { serveStatic } from "hono/bun";',
+    '',
+    `const ORIGIN = ${JSON.stringify(origin)};`,
+    '',
+    '// Content-hashed build output only — anything whose bytes cannot change',
+    '// without its URL changing too. Every dynamic path (pages, RSC navigation',
+    '// fetches, /api/*) is proxied live instead, below.',
+    'const STATIC_ASSET = /^\\/(_next\\/static\\/|assets\\/)/;',
+    '',
+    'const app = new Hono();',
+    '',
+    'app.use("*", async (c, next) => {',
+    '  const url = new URL(c.req.url);',
+    '  if (STATIC_ASSET.test(url.pathname) || url.pathname === "/favicon.png") {',
+    '    return next();',
+    '  }',
+    '',
+    '  const target = new URL(url.pathname + url.search, ORIGIN);',
+    '  const headers = new Headers(c.req.raw.headers);',
+    '  headers.delete("host");',
+    '  headers.delete("content-length");',
+    '  // An Origin/Referer check on the real backend would never fire for a real',
+    '  // browser on the real site; presenting our own localhost origin instead',
+    '  // would make it fire for no reason.',
+    '  headers.set("origin", ORIGIN);',
+    '  if (headers.has("referer")) headers.set("referer", target.toString());',
+    '',
+    '  const upstream = await fetch(target, {',
+    '    method: c.req.method,',
+    '    headers,',
+    '    redirect: "manual",',
+    '    body: ["GET", "HEAD"].includes(c.req.method)',
+    '      ? undefined',
+    '      : await c.req.raw.arrayBuffer(),',
+    '  });',
+    '',
+    '  const outHeaders = new Headers(upstream.headers);',
+    '  // A Set-Cookie scoped to the real domain is silently rejected by the',
+    '  // browser when it arrives from localhost; drop the Domain attribute so it',
+    '  // stays scoped to this proxy instead, and a real session actually sticks.',
+    '  const cookies = outHeaders.getSetCookie?.() ?? [];',
+    '  outHeaders.delete("set-cookie");',
+    '  for (const cookie of cookies) {',
+    '    outHeaders.append("set-cookie", cookie.replace(/;\\s*Domain=[^;]+/i, ""));',
+    '  }',
+    '  outHeaders.delete("content-encoding");',
+    '  outHeaders.delete("content-length");',
+    '',
+    '  return new Response(upstream.body, {',
+    '    status: upstream.status,',
+    '    headers: outHeaders,',
+    '  });',
+    '});',
+    '',
+    'app.use("/*", serveStatic({ root: "./public" }));',
+    '',
+    'const port = Number(process.env.PORT ?? 8787);',
+    'export default { port, fetch: app.fetch };',
+    '',
+  ].join('\n');
 }
 
 export async function runReconstruct(argv: string[]): Promise<void> {
