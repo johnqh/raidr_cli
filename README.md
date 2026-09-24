@@ -13,7 +13,7 @@ under Bun directly.
 ## Usage
 
 ```bash
-raidr reconstruct <bundle.zip|dir> --out <dir>
+raidr reconstruct <bundle.zip|dir> --out <dir> [--replay]
 raidr install [--claude] [--codex] [--agents] [--all]
 raidr uninstall [--claude] [--codex] [--agents]
 ```

@@ -1,6 +1,6 @@
 {
   "name": "@sudobility/raidr_cli",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Reconstruct a web app from an raidr capture bundle",
   "license": "BUSL-1.1",
   "author": "Sudobility Inc.",

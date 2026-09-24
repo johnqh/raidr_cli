@@ -44,6 +44,13 @@ It writes the project and, under `<dir>/.raidr/`, the artifacts you work from.
 Do not read the raw bundle before running it — the artifacts are the same data,
 already clustered, typed, and de-duplicated.
 
+Do not add `--replay` unless the user's own prompt asks for a replay-based,
+offline, or mock server. The default (no flag) is correct almost always: in
+mirror mode it proxies dynamic requests to the real backend live, which is the
+only way a stateful flow like login or a chat endpoint behaves correctly.
+`--replay` freezes those flows at whatever one capture session happened to
+see — a deliberate downgrade, not a default.
+
 **2. Read `<dir>/.raidr/report.md`.**
 
 It names the framework, the reconstruction mode, the routes (including which
@@ -54,6 +61,7 @@ on the mode:
 |---|---|---|
 | `recovery` | Source maps covered ≥80% of the JS | Copy real original sources from `.raidr/02-sources/` into the project. This is recovery, not inference — do not paraphrase them. |
 | `inference` | Little or no source-map coverage | Read `.raidr/03-chunks/` and write components that reproduce observed behavior. |
+| `mirror` | Server-rendered, no client router to reconstruct | The mirror is already the deliverable — verify it (step 6), nothing to implement. By default `server/replay.ts` proxies every dynamic request to the real backend live; only `--replay` mode serves `.raidr/recordings.json` instead. |
 
 **3. Enumerate every page before implementing any.**
 
@@ -101,9 +109,12 @@ for p in $(bun -e 'console.log(require("./.raidr/06-mirror.json").pages.join(" "
 done
 ```
 
-The replay server answers captured endpoints with real recorded bodies and
-returns 501 `RAIDR-GAP` for anything never captured. A 501 is information, not a
-bug to work around.
+In default (proxy) mode, `server/replay.ts` answers dynamic requests by
+forwarding them live to the real backend — a non-200 there is the real
+backend's own answer, not necessarily a reconstruction defect; check it
+against the live site before calling it a finding. In `--replay` mode, it
+answers from `.raidr/recordings.json` and returns 501 `RAIDR-GAP` for anything
+never captured — a 501 there is information, not a bug to work around.
 
 Your completion report has four parts, in this order. All four appear every
 time, including when a section is empty — an omitted section reads as "nothing
@@ -127,7 +138,7 @@ say exactly what to browse next time.
 | `.raidr/03-chunks/` | Beautified chunks (inference mode) |
 | `.raidr/04-api-model.json` | Endpoints, per-status schemas, auth style |
 | `.raidr/05-route-model.json` | Routes, params, visited flag, endpoints per route |
-| `.raidr/recordings.json` | Real captured responses the replay server serves |
+| `.raidr/recordings.json` | Real captured responses; only served by `server/replay.ts` in `--replay` mode — the default proxies live instead |
 | `.raidr/06-mirror.json` | Every page and file written back byte-exact |
 | `.raidr/07-link-audit.json` | Internal links that resolve to nothing — the pages the capture missed |
 
@@ -145,3 +156,4 @@ say exactly what to browse next time.
 | Treating the route model as the full page list | It lists pages the capture reached. The link audit lists pages the site links to. Reconstructing only the first ships a homepage whose nav 404s. |
 | Reporting success while `unreachablePages` is above zero | The build passing and the site working are different claims. Report the number, then the URLs to re-capture. |
 | Skipping a page because its content is not in the bundle | A page you cannot build is a capture gap to report, not a page to leave out of the report. |
+| Passing `--replay` because it wasn't specified | Default is live-proxy, since only the real backend gets a stateful flow (login, chat) right. Add `--replay` only when the user's prompt actually asks for a frozen, offline, or mock server. |

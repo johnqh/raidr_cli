@@ -53,6 +53,15 @@ function isApiCall(request: { url: string; method: string; resourceType: string 
 export async function reconstruct(options: {
   bundlePath: string;
   outDir: string;
+  /**
+   * Mirror mode only. A frozen replay of one capture session cannot get a
+   * stateful flow like login right — the real backend answers differently
+   * over time, an OAuth code is consumed once, a chat reply depends on the
+   * live model. Default is false: proxy every dynamic request to the real
+   * origin, live. Pass true to fall back to replaying `recordings.json`
+   * instead — useful offline, but frozen at whatever the capture saw.
+   */
+  replay?: boolean;
 }): Promise<ReconstructReport> {
   const bundle = await loadBundle(options.bundlePath);
   const raidrDir = join(options.outDir, '.raidr');
@@ -238,9 +247,17 @@ export async function reconstruct(options: {
     bundler: 'unknown',
   };
 
+  const useReplay = options.replay === true;
+
   const project: Record<string, string> =
     mode === 'mirror'
-      ? mirrorProject({ origin: bundle.manifest.origin, stack, mirror, gaps: bundle.gaps })
+      ? mirrorProject({
+          origin: bundle.manifest.origin,
+          stack,
+          mirror,
+          gaps: bundle.gaps,
+          replay: useReplay,
+        })
       : generateProject({
           name: 'rebuilt',
           stack,
@@ -252,7 +269,11 @@ export async function reconstruct(options: {
   project['src/api/types.ts'] = generateTypes(api);
   project['src/api/client.ts'] = generateClient(api);
   project['server/replay.ts'] =
-    mode === 'mirror' ? mirrorServer(bundle.manifest.origin) : generateReplayServer(api);
+    mode === 'mirror'
+      ? useReplay
+        ? mirrorReplayServer(api, mirror.pages)
+        : mirrorProxyServer(bundle.manifest.origin)
+      : generateReplayServer(api);
   project['server/recordings.json'] = JSON.stringify(recordings, null, 2);
 
   const filesWritten = await emitFiles(options.outDir, project);
@@ -336,6 +357,7 @@ function mirrorProject(input: {
   stack: StackFingerprint;
   mirror: { filesWritten: number; pages: string[]; bytes: number };
   gaps: Array<{ reason: string; url: string; detail: string | null }>;
+  replay: boolean;
 }): Record<string, string> {
   const files: Record<string, string> = {};
 
@@ -376,20 +398,35 @@ function mirrorProject(input: {
     'bun run serve   # http://localhost:8787',
     '```',
     '',
-    'Static files (`/_next/static`, `/assets`) are served from `public/`.',
-    `Everything else — pages, client-side navigation fetches, and \`/api/*\` —`,
-    `is proxied straight through to the real backend at ${input.origin}, live.`,
-    'A frozen replay of one capture session can never get a real login or a',
-    'real chat reply right; the live backend can. `server/recordings.json`',
-    'and `.raidr/04-api-model.json` are kept as a record of what was captured,',
-    'but the server no longer reads them.',
-    '',
-    '**Known limitation:** an OAuth-style login (e.g. "Sign in with Google")',
-    `redirects through the provider and back to ${new URL(input.origin).host}`,
-    'itself, not back to localhost — the proxy cannot rewrite that callback.',
-    'Everything that does not leave the origin (auth checks, API calls, RSC',
-    'navigation) is fully live.',
-    '',
+    ...(input.replay
+      ? [
+          'Static files are served from `public/`. API calls are replayed from',
+          '`server/recordings.json`, stepping through every response the capture',
+          'saw for that endpoint in the order it saw them (so a flow like login,',
+          'captured as logged-out then logged-in, replays that transition instead',
+          'of freezing on the first snapshot). Anything never captured returns 501',
+          'rather than a plausible invention. Pass `--replay` to `raidr reconstruct`',
+          'to regenerate in this mode; the default instead proxies live to the real',
+          'backend, since no replay can get a stateful flow fully right.',
+          '',
+        ]
+      : [
+          'Static files (`/_next/static`, `/assets`) are served from `public/`.',
+          'Everything else — pages, client-side navigation fetches, and `/api/*` —',
+          `is proxied straight through to the real backend at ${input.origin}, live.`,
+          'A frozen replay of one capture session can never get a real login or a',
+          'real chat reply right; the live backend can. `server/recordings.json`',
+          'and `.raidr/04-api-model.json` are kept as a record of what was captured,',
+          'but the server no longer reads them. Pass `--replay` to `raidr reconstruct`',
+          'to regenerate against the frozen capture instead (useful offline).',
+          '',
+          '**Known limitation:** an OAuth-style login (e.g. "Sign in with Google")',
+          `redirects through the provider and back to ${new URL(input.origin).host}`,
+          'itself, not back to localhost — the proxy cannot rewrite that callback.',
+          'Everything that does not leave the origin (auth checks, API calls, RSC',
+          'navigation) is fully live.',
+          '',
+        ]),
     '## What is not here',
     '',
     '- Server component source — it ran on the server and was never sent.',
@@ -434,7 +471,7 @@ function mirrorProject(input: {
  * local mirror; every dynamic request — pages, client-side navigation
  * fetches, `/api/*` — is proxied straight through to the real origin, live.
  */
-function mirrorServer(origin: string): string {
+function mirrorProxyServer(origin: string): string {
   return [
     '// Generated by raidr. Serves captured static assets locally and proxies',
     '// everything dynamic to the real backend, live.',
@@ -501,17 +538,95 @@ function mirrorServer(origin: string): string {
   ].join('\n');
 }
 
+/**
+ * The `--replay` fallback: serves `recordings.json` instead of the real
+ * backend. Useful offline, but frozen at whatever the capture saw — see the
+ * doc comment on `mirrorProxyServer` for why that is the wrong default for a
+ * stateful app.
+ */
+function mirrorReplayServer(
+  api: Parameters<typeof generateReplayServer>[0],
+  pages: string[]
+): string {
+  // A page path (e.g. /documentation) and its Next.js RSC navigation fetch
+  // are the exact same URL — Next.js tells them apart with an `rsc` request
+  // header, never with the path. The endpoint routes registered below answer
+  // both, so a real browser request for the page itself (no `rsc` header: a
+  // hard reload, a bookmark, a link opened in a new tab) must be served the
+  // mirrored HTML before it ever reaches those routes.
+  const pagePaths = pages.map((p) => p.replace(/\/index\.html$/, '') || '/').sort();
+  const pageGuard =
+    // The capture often recorded more than one response for the same key —
+    // real moments in the session's real timeline (logged out, then in, then
+    // out again). Freezing on the first one means a client that polls this
+    // endpoint waiting for state to change (e.g. after clicking "Log in")
+    // never sees it change, and can retry-loop hard enough to trip the
+    // browser's history.replaceState rate limit and crash. Stepping through
+    // what was actually captured, in order, replays that real transition.
+    'const callCounts = new Map();\n' +
+    'const MIRRORED_PAGES = new Set(' +
+    JSON.stringify(pagePaths) +
+    ');\n' +
+    "app.use('*', (c, next) => {\n" +
+    "  const path = new URL(c.req.url).pathname.replace(/\\/$/, '') || '/';\n" +
+    "  if (c.req.method !== 'GET' || c.req.header('rsc') || !MIRRORED_PAGES.has(path)) {\n" +
+    '    return next();\n' +
+    '  }\n' +
+    '  return serveStatic({ path: `./public${path === \'/\' ? \'\' : path}/index.html` })(\n' +
+    '    c,\n' +
+    '    next\n' +
+    '  );\n' +
+    '});\n';
+
+  // The mirror lives in public/, not dist/, and extensionless pages were
+  // written as <path>/index.html — so the fallback resolves them there.
+  return generateReplayServer(api)
+    .replace('const app = new Hono();\n', `const app = new Hono();\n\n${pageGuard}`)
+    .replace("serveStatic({ root: './dist' })", "serveStatic({ root: './public' })")
+    .replace(
+      "app.get('*', serveStatic({ path: './dist/index.html' }));",
+      "app.get('*', (c, next) =>\n" +
+        "  serveStatic({\n" +
+        "    path: `./public${new URL(c.req.url).pathname.replace(/\\/$/, '')}/index.html`,\n" +
+        "  })(c, next)\n" +
+        ');'
+    )
+    .replace(
+      '  const pick = recorded[0]!;\n' +
+        '  return c.json(pick.body as never, pick.status as never);\n' +
+        '}',
+      '  const seen = callCounts.get(key) ?? 0;\n' +
+        '  callCounts.set(key, seen + 1);\n' +
+        '  const pick = recorded[seen % recorded.length]!;\n' +
+        '  // A recorded string body is one that failed JSON.parse at capture time\n' +
+        '  // (e.g. a Next.js RSC flight payload) and was kept as raw text instead of\n' +
+        "  // being dropped — replay it with its real content-type, not application/json.\n" +
+        "  if (typeof pick.body === 'string') {\n" +
+        '    return c.body(pick.body, pick.status as never, {\n' +
+        "      'content-type': pick.headers['content-type'] || 'text/plain; charset=utf-8',\n" +
+        '    });\n' +
+        '  }\n' +
+        '  return c.json(pick.body as never, pick.status as never);\n' +
+        '}'
+    );
+}
+
 export async function runReconstruct(argv: string[]): Promise<void> {
   const bundlePath = argv[0];
   const outIndex = argv.indexOf('--out');
   const outDir = outIndex >= 0 ? argv[outIndex + 1] : undefined;
+  const replay = argv.includes('--replay');
 
   if (!bundlePath || !outDir) {
-    console.error('usage: raidr reconstruct <bundle.zip|dir> --out <dir>');
+    console.error(
+      'usage: raidr reconstruct <bundle.zip|dir> --out <dir> [--replay]\n' +
+        '  --replay  mirror mode only: serve recordings.json instead of proxying\n' +
+        '            to the real backend. Default is to proxy live.'
+    );
     process.exit(1);
   }
 
-  const report = await reconstruct({ bundlePath, outDir });
+  const report = await reconstruct({ bundlePath, outDir, replay });
   console.log(JSON.stringify(report, null, 2));
   console.log(`\nArtifacts: ${join(outDir, '.raidr')}`);
   console.log(`Report:    ${join(outDir, '.raidr', 'report.md')}`);
