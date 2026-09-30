@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { unzipSync, strFromU8 } from 'fflate';
-import { validateManifest, parseJsonl, type CapturedRequest } from '@sudobility/raidr_lib';
+import { validateManifest, parseJsonl, type CapturedRequest } from '@sudobility/raidr_processor';
 import { captureApp } from '../../src/capture/harness';
 import { startFixtureApi } from '../../fixtures/api/server';
 

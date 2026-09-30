@@ -41,20 +41,20 @@ covered by `bun test`; only genuinely model-shaped work lives in prose.
 
 ## Why this is a separate repository
 
-[`raidr_lib`](https://github.com/johnqh/raidr_lib) is imported by
+[`raidr_processor`](https://github.com/johnqh/raidr_processor) is imported by
 [`raidr_extension`](https://github.com/johnqh/raidr_extension), which ships into
 a Chrome MV3 bundle. Its defining constraint is that it performs no I/O — no
 filesystem, no `DOM` in its tsconfig `lib` — which is what keeps it trivially
 testable and safe to bundle for the browser.
 
 A CLI is the opposite: it needs `fs`, `path`, `process`, and zip extraction.
-Putting that in `raidr_lib` would place Node-only code in the dependency graph
+Putting that in `raidr_processor` would place Node-only code in the dependency graph
 of a browser artifact and would end the mechanical enforcement of that purity.
 
 So the dependency shape is a diamond, not a chain:
 
 ```
-raidr_lib              pure: bundle format, redaction, coverage, inference
+raidr_processor              pure: bundle format, redaction, coverage, inference
    ├── raidr_extension   browser: CDP capture, offscreen buffer, side panel
    └── raidr_cli         node: unzip, filesystem, codegen + the reconstruct skill
 ```
@@ -75,7 +75,7 @@ bun run fixtures:capture    # capture them into fixtures/bundles/
 
 | Repository | Role |
 |---|---|
-| [`raidr_lib`](https://github.com/johnqh/raidr_lib) | Bundle format and pure analysis |
+| [`raidr_processor`](https://github.com/johnqh/raidr_processor) | Bundle format and pure analysis |
 | [`raidr_extension`](https://github.com/johnqh/raidr_extension) | Chrome MV3 extension that performs the capture |
 | [`raidr_cli`](https://github.com/johnqh/raidr_cli) | Reconstruction CLI and the agent skill — this repo |
 | [`raidr_web`](https://github.com/johnqh/raidr_web) | Landing site |

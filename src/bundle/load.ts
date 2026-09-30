@@ -10,7 +10,7 @@ import {
   type RedactionEntry,
   type RuntimeArtifacts,
   type RaidrManifest,
-} from '@sudobility/raidr_lib';
+} from '@sudobility/raidr_processor';
 
 export interface LoadedBundle {
   manifest: RaidrManifest;

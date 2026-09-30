@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 
 // probes.ts is duplicated in raidr_cli and raidr_extension on purpose: it is
 // serialized with .toString() and evaluated in the page, so it touches DOM
-// globals and cannot move into raidr_lib, which forbids DOM in its tsconfig
+// globals and cannot move into raidr_processor, which forbids DOM in its tsconfig
 // lib. This test is the guard on that duplication.
 //
 // It can only run where both repos are checked out side by side — a developer

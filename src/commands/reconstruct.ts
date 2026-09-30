@@ -15,7 +15,7 @@ import {
   recoveryRatio,
   type EndpointSample,
   type StackFingerprint,
-} from '@sudobility/raidr_lib';
+} from '@sudobility/raidr_processor';
 import { loadBundle } from '../bundle/load';
 import { unpackChunks } from '../stages/unpack';
 import { emitMirror } from '../stages/mirror';

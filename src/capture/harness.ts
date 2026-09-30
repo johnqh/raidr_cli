@@ -10,7 +10,7 @@ import {
   type CapturedRequest,
   type Gap,
   type StackFingerprint,
-} from '@sudobility/raidr_lib';
+} from '@sudobility/raidr_processor';
 import { PROBE_SOURCES } from '../introspect/probes';
 
 export interface CaptureOptions {

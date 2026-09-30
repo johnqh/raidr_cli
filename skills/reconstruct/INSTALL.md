@@ -7,7 +7,7 @@ The skill drives the `raidr` CLI, so install both.
 From a clone of this repository:
 
 ```bash
-cd ~/projects/raidr_lib && bun install && bun run build
+cd ~/projects/raidr_processor && bun install && bun run build
 cd ~/projects/raidr_cli && bun install
 bun link
 ```
