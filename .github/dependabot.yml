@@ -1,0 +1,13 @@
+# Dependabot must treat this repo as a Bun project: with no config it falls
+# back to the npm_and_yarn ecosystem, which cannot update bun.lock, and every
+# security update job fails with "Bun is misconfigured".
+#
+# open-pull-requests-limit: 0 turns off routine version-update PRs (versions
+# move through push_all.sh); security updates are unaffected and still open PRs.
+version: 2
+updates:
+  - package-ecosystem: "bun"
+    directories: ["/", "/fixtures/apps/*"]
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
