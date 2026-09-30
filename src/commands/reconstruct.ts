@@ -1,3 +1,10 @@
+/**
+ * `raidr reconstruct`: the deterministic pipeline from a capture bundle to a
+ * runnable project plus the `.raidr/` artifacts the reconstruct skill reads.
+ * Stages are numbered by the artifact file they write (01-bundle.json …
+ * 07-link-audit.json); the analysis and codegen themselves live in
+ * raidr_processor, this module only sequences them and does the I/O.
+ */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -21,18 +28,28 @@ import { unpackChunks } from '../stages/unpack';
 import { emitMirror } from '../stages/mirror';
 import { emitFiles } from '../emit';
 
+/** Printed as JSON by `raidr reconstruct`; also the return value of {@link reconstruct}. */
 export interface ReconstructReport {
+  /** Integer percent (0–100) of captured JS bytes covered by a usable source map. */
   recoveryRatio: number;
+  /** Link-audit entries of kind `page`: linked from a captured page but never captured. */
   unreachablePages: number;
+  /**
+   * `recovery` when `recoveryRatio` ≥ 80; otherwise `mirror` when any HTML page
+   * was mirrored, else `inference`.
+   */
   mode: 'recovery' | 'inference' | 'mirror';
   mirroredFiles: number;
+  /** Mirrored HTML pages, served or from snapshots. */
   pages: number;
   routes: number;
   endpoints: number;
   gaps: number;
+  /** Project files emitted (excludes `.raidr/` artifacts and the mirror). */
   filesWritten: number;
 }
 
+/** Percent of JS bytes that source maps must cover to choose `recovery` mode. */
 const RECOVERY_THRESHOLD = 80;
 
 /**
@@ -50,6 +67,11 @@ function isApiCall(request: { url: string; method: string; resourceType: string 
   return API_RESOURCE_TYPES.has(request.resourceType);
 }
 
+/**
+ * Runs every stage and writes the project into `options.outDir`, with stage
+ * artifacts under `<outDir>/.raidr/` and the mirror under `<outDir>/public/`.
+ * Does not clear `outDir` first; callers that need a clean run remove it.
+ */
 export async function reconstruct(options: {
   bundlePath: string;
   outDir: string;
@@ -611,6 +633,7 @@ function mirrorReplayServer(
     );
 }
 
+/** CLI handler: `raidr reconstruct <bundle.zip|dir> --out <dir> [--replay]`. */
 export async function runReconstruct(argv: string[]): Promise<void> {
   const bundlePath = argv[0];
   const outIndex = argv.indexOf('--out');

@@ -1,14 +1,25 @@
+/**
+ * Stage 3 of `raidr reconstruct`: beautify every captured JavaScript response
+ * and, for webpack output, split it into per-module files. Runs only when
+ * source-map recovery falls below the recovery threshold.
+ */
 import prettier from 'prettier';
 import type { LoadedBundle } from '../bundle/load';
 
+/** One captured script, beautified. */
 export interface UnpackedChunk {
   url: string;
+  /** Content hash of the captured response body. */
   hash: string;
+  /** Beautified source, or the original bytes if prettier could not parse it. */
   source: string;
+  /** True when {@link splitWebpackModules} found module boundaries. */
   splittable: boolean;
+  /** Per-module sources; empty unless `splittable`. */
   modules: Array<{ id: string; source: string }>;
 }
 
+/** Prettier-formats script source; returns the input unchanged if it will not parse. */
 export async function beautify(source: string): Promise<string> {
   try {
     return await prettier.format(source, {
@@ -87,6 +98,10 @@ export function splitWebpackModules(
   return modules;
 }
 
+/**
+ * Beautifies every response whose `mimeType` contains `javascript` and whose
+ * body was captured. Chunks without a body in the bundle are skipped.
+ */
 export async function unpackChunks(bundle: LoadedBundle): Promise<UnpackedChunk[]> {
   const chunks: UnpackedChunk[] = [];
 

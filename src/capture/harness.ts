@@ -1,3 +1,11 @@
+/**
+ * Test-only capture harness: serves a built fixture app, drives it with
+ * Playwright's Chromium over CDP, and assembles an raidr bundle using the same
+ * raidr_processor redaction and bundle code the extension uses. It exists so
+ * `fixtures/bundles/*.zip` can be regenerated without the Chrome extension
+ * (`bun run fixtures:capture`). Playwright is a devDependency; nothing in the
+ * published CLI imports this module.
+ */
 import { chromium } from 'playwright';
 import {
   MemoryContentStore,
@@ -13,11 +21,13 @@ import {
 } from '@sudobility/raidr_processor';
 import { PROBE_SOURCES } from '../introspect/probes';
 
+/** Input to {@link captureApp}. */
 export interface CaptureOptions {
   /** Built app directory to serve statically. */
   appDir: string;
   /** SPA paths to visit, in order. */
   routes: string[];
+  /** Used as the manifest `sessionId`. */
   outName: string;
 }
 
@@ -47,6 +57,18 @@ function asHeaders(value: unknown): Record<string, string> {
   return out;
 }
 
+/**
+ * Captures `options.routes` of a built app and returns the zipped bundle bytes.
+ *
+ * Each route gets its own `navigationId` (`nav1`, `nav2`, …) so the bundle
+ * carries a runtime navigation table. Response bodies are drained before every
+ * navigation because Chrome evicts them on navigate; a body that still cannot
+ * be read becomes a `body-evicted` gap. Source maps are fetched afterwards with
+ * recording switched off, and are kept only when they carry `sourcesContent`.
+ *
+ * Expects the fixture API on port 8123 when the app calls it (see
+ * `fixtures/api/server.ts`).
+ */
 export async function captureApp(options: CaptureOptions): Promise<Uint8Array> {
   // Serve the built app with SPA fallback so deep links resolve.
   const appServer = Bun.serve({
@@ -274,4 +296,5 @@ export async function captureApp(options: CaptureOptions): Promise<Uint8Array> {
   return zipBundle(files);
 }
 
+/** Re-exported from raidr_processor for callers that name the zip. */
 export { bundleFilename };

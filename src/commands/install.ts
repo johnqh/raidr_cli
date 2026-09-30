@@ -1,7 +1,14 @@
+/**
+ * `raidr install` / `raidr uninstall`: symlink this repo's `skills/reconstruct`
+ * directory into a coding agent's personal skills directory as
+ * `raidr-reconstruct`. A symlink rather than a copy, so the installed skill
+ * always matches the CLI checkout (or global package) it drives.
+ */
 import { mkdir, symlink, rm, stat, readlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+/** Coding-agent skill locations `raidr install` knows about. */
 export type Runtime = 'claude' | 'codex' | 'agents';
 
 /**
@@ -17,6 +24,7 @@ const SKILL_DIRS: Record<Runtime, string> = {
 
 const SKILL_NAME = 'raidr-reconstruct';
 
+/** Outcome of installing for one runtime. `target` is the symlink path. */
 export interface InstallResult {
   runtime: Runtime;
   target: string;
@@ -63,6 +71,9 @@ async function linkOne(
 }
 
 /**
+ * Links the skill for each runtime, replacing a stale link but refusing to
+ * delete a real file or directory at the target.
+ *
  * `home` is injected rather than read from the environment: node's homedir()
  * ignores runtime changes to HOME, so a test that redirects it would silently
  * write into the developer's real home directory.
@@ -78,6 +89,12 @@ export async function install(
   return results;
 }
 
+/**
+ * Removes the skill link for each runtime. Only symlinks are removed; a
+ * runtime with nothing linked is skipped silently.
+ *
+ * @returns the link paths actually removed.
+ */
 export async function uninstall(
   runtimes: Runtime[],
   home: string = homedir()
@@ -96,6 +113,10 @@ export async function uninstall(
   return removed;
 }
 
+/**
+ * Maps `--claude` / `--codex` / `--agents` / `--all` to runtimes.
+ * @returns null when no runtime flag is present, so callers can choose the default.
+ */
 export function parseRuntimes(argv: string[]): Runtime[] | null {
   const all: Runtime[] = ['claude', 'codex', 'agents'];
   if (argv.includes('--all')) return all;
@@ -103,6 +124,7 @@ export function parseRuntimes(argv: string[]): Runtime[] | null {
   return chosen.length > 0 ? chosen : null;
 }
 
+/** CLI handler for `raidr install`; exits 1 with usage when no runtime flag is given. */
 export async function runInstall(argv: string[]): Promise<void> {
   const runtimes = parseRuntimes(argv);
   if (!runtimes) {
@@ -127,6 +149,7 @@ export async function runInstall(argv: string[]): Promise<void> {
   console.log('\nStart a new session — skills are read at session start.');
 }
 
+/** CLI handler for `raidr uninstall`; with no flags it uninstalls from every runtime. */
 export async function runUninstall(argv: string[]): Promise<void> {
   const runtimes = parseRuntimes(argv) ?? ['claude', 'codex', 'agents'];
   const removed = await uninstall(runtimes);

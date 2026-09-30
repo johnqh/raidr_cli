@@ -1,4 +1,9 @@
 #!/usr/bin/env bun
+/**
+ * `raidr` binary entry point (package.json `bin`). Runs as TypeScript under Bun
+ * directly — there is no build step. Each subcommand is imported lazily so
+ * `raidr install` never loads prettier or the analysis stack.
+ */
 const [command, ...rest] = process.argv.slice(2);
 
 switch (command) {

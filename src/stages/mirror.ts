@@ -1,3 +1,8 @@
+/**
+ * Stage 5b of `raidr reconstruct`: write the captured site back to disk under
+ * `<out>/public/`, byte-for-byte, and fill client-rendered routes from DOM
+ * snapshots. Always runs, whatever the reconstruction mode.
+ */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { LoadedBundle } from '../bundle/load';
@@ -16,9 +21,12 @@ const MIRRORED = new Set([
 /** Fetch/XHR responses that are static data rather than a live API call. */
 const DATA_SUFFIX = /\.(json|rsc|txt|xml|svg|wasm|i8|u16|f32|bin|csv)$/i;
 
+/** Summary of {@link emitMirror}. All paths are mirror-relative and start with `/`. */
 export interface MirrorResult {
   filesWritten: number;
+  /** Every HTML page written (served or snapshot), sorted, e.g. `/users/index.html`. */
   pages: string[];
+  /** Total bytes written. */
   bytes: number;
   /** Pages written from a rendered-DOM snapshot rather than served bytes. */
   fromSnapshot: string[];
@@ -55,6 +63,11 @@ function toDiskPath(url: string, isDocument: boolean): string | null {
  * of a reconstruction that involves no inference at all: the bytes are the
  * bytes. For a server-rendered app with no source maps it is also the only
  * faithful artifact available — the components were never sent to the browser.
+ *
+ * Only GETs with a captured body and no 3xx+ status are written, limited to
+ * {@link MIRRORED} resource types plus Fetch/XHR responses that look like static
+ * data files. The first capture of a path wins; paths containing `..` are
+ * dropped; extensionless documents become `<path>/index.html`.
  */
 export async function emitMirror(
   bundle: LoadedBundle,
