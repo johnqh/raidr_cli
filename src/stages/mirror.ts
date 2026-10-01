@@ -59,6 +59,23 @@ function toDiskPath(url: string, isDocument: boolean): string | null {
 }
 
 /**
+ * Write one mirror file. A URL path can be both a file and a directory on the
+ * web (`/beacon.min.js` and `/beacon.min.js/v8`), but not on disk; the path
+ * written second loses and is skipped. Returns whether the file was written.
+ */
+async function writeMirrorFile(path: string, body: Uint8Array): Promise<boolean> {
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, body);
+    return true;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === 'EEXIST' || code === 'ENOTDIR' || code === 'EISDIR') return false;
+    throw error;
+  }
+}
+
+/**
  * Writes the site back to disk exactly as it was served. This is the one part
  * of a reconstruction that involves no inference at all: the bytes are the
  * bytes. For a server-rendered app with no source maps it is also the only
@@ -67,7 +84,8 @@ function toDiskPath(url: string, isDocument: boolean): string | null {
  * Only GETs with a captured body and no 3xx+ status are written, limited to
  * {@link MIRRORED} resource types plus Fetch/XHR responses that look like static
  * data files. The first capture of a path wins; paths containing `..` are
- * dropped; extensionless documents become `<path>/index.html`.
+ * dropped; extensionless documents become `<path>/index.html`; a path that
+ * collides with an earlier file/directory on disk is skipped.
  */
 export async function emitMirror(
   bundle: LoadedBundle,
@@ -100,8 +118,10 @@ export async function emitMirror(
     if (!body) continue;
 
     const path = join(outDir, relative);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, body);
+    if (!(await writeMirrorFile(path, body))) {
+      seen.delete(relative);
+      continue;
+    }
     filesWritten += 1;
     bytes += body.byteLength;
 
@@ -121,10 +141,9 @@ export async function emitMirror(
     const body = bundle.content.get(hash);
     if (!body) continue;
 
-    seen.add(relative);
     const path = join(outDir, relative);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, body);
+    if (!(await writeMirrorFile(path, body))) continue;
+    seen.add(relative);
     filesWritten += 1;
     bytes += body.byteLength;
     pages.push(`/${relative}`);

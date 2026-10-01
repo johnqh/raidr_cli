@@ -86,3 +86,25 @@ test('served bytes always win over a snapshot for the same path', async () => {
   expect(result.fromSnapshot).not.toContain('/index.html');
   expect(await readFile(`${OUT}/index.html`, 'utf8')).not.toContain('SNAPSHOT');
 });
+
+test('a path that is both a file and a directory on the web does not abort the mirror', async () => {
+  // Cloudflare serves /beacon.min.js and /beacon.min.js/v8...; on disk the
+  // second needs a directory where the first is a file. The second is skipped.
+  await rm(OUT, { recursive: true, force: true });
+  const bundle = await loadBundle(`${import.meta.dir}/../../fixtures/bundles/react-sample.zip`);
+  const encoder = new TextEncoder();
+  const add = (url: string, hash: string, text: string) => {
+    bundle.content.set(hash, encoder.encode(text));
+    bundle.requests.push({
+      id: hash, ts: 0, method: 'GET', url, resourceType: 'Script', requestHeaders: {}, requestBodyHash: null,
+      status: 200, responseHeaders: {}, responseBodyHash: hash, mimeType: 'text/javascript', fromCache: false, navigationId: null,
+    });
+  };
+  add('https://example.com/beacon.min.js', 'h-beacon', 'beacon();');
+  add('https://example.com/beacon.min.js/v8c78df7c7', 'h-beacon-v8', 'beacon8();');
+
+  const result = await emitMirror(bundle, OUT);
+  expect(await readFile(`${OUT}/beacon.min.js`, 'utf8')).toBe('beacon();');
+  expect(result.paths).toContain('/beacon.min.js');
+  expect(result.paths).not.toContain('/beacon.min.js/v8c78df7c7');
+});

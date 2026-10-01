@@ -100,14 +100,20 @@ export function splitWebpackModules(
 
 /**
  * Beautifies every response whose `mimeType` contains `javascript` and whose
- * body was captured. Chunks without a body in the bundle are skipped.
+ * body was captured, once per distinct body (the first request's URL is
+ * kept). Chunks without a body in the bundle are skipped.
  */
 export async function unpackChunks(bundle: LoadedBundle): Promise<UnpackedChunk[]> {
   const chunks: UnpackedChunk[] = [];
+  // The same script is usually captured once per page that loaded it; its
+  // body (and so its unpacked form) is identical, so do the work once.
+  const done = new Set<string>();
 
   for (const request of bundle.requests) {
     if (!request.mimeType?.includes('javascript')) continue;
     if (!request.responseBodyHash) continue;
+    if (done.has(request.responseBodyHash)) continue;
+    done.add(request.responseBodyHash);
     const source = bundle.text(request.responseBodyHash);
     if (source === null) continue;
 
