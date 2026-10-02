@@ -6,7 +6,7 @@
       "name": "@sudobility/raidr_cli",
       "dependencies": {
         "@sudobility/raidr_processor": "^0.1.3",
-        "@sudobility/raidr_types": "^0.1.8",
+        "@sudobility/raidr_types": "^0.1.9",
         "fflate": "^0.8.2",
         "hono": "^4.6.0",
         "playwright": "^1.60.0",
@@ -21,7 +21,7 @@
   "packages": {
     "@sudobility/raidr_processor": ["@sudobility/raidr_processor@0.1.3", "", { "dependencies": { "fflate": "^0.8.2" } }, "sha512-FcoIXLLLuZ5tDyV3No4kpg8OVNZQNmyNrBpIWDzO3EKAyAubif3YSclvswDhYGfOtHAsUI7OJJTbDQeW6VNEhw=="],
 
-    "@sudobility/raidr_types": ["@sudobility/raidr_types@0.1.8", "", { "peerDependencies": { "@sudobility/types": "^1.9.68", "zod": "^4.0.0" }, "optionalPeers": ["zod"] }, "sha512-7rpVwxnWAElLX1H2iUHbPFqrVyi/fZmk1BJSntiyXH5R1vSkOghm8CB2Oaj876Sy/SSGSthf1tw0lT5AVRWR/A=="],
+    "@sudobility/raidr_types": ["@sudobility/raidr_types@0.1.9", "", { "peerDependencies": { "@sudobility/types": "^1.9.68", "zod": "^4.0.0" }, "optionalPeers": ["zod"] }, "sha512-jSjsKVInreKhMKeibqDZePucMS91Tns4xRjWILhnfcaiE0Z8Ne4G351B5A5YYfNVtN19bNFulYpUHWQJ2c+7nw=="],
 
     "@sudobility/types": ["@sudobility/types@1.9.68", "", {}, "sha512-4LL5+UfcqQcc0PKKR/z/PqS6j9DQPVkkjL+3oOW+Bwx0TAu1SVKAlPhlt/9ruNMW+abcHuZoFvbOVD5gdYBSGw=="],
 
