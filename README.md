@@ -14,6 +14,7 @@ under Bun directly.
 
 ```bash
 raidr reconstruct <bundle.zip|dir> --out <dir> [--replay]
+raidr token <apiHost> [--print]
 raidr install [--claude] [--codex] [--agents] [--all]
 raidr uninstall [--claude] [--codex] [--agents]
 ```
@@ -23,6 +24,25 @@ directory of a coding agent — `.claude/skills`, `.codex/skills`, or the shared
 `.agents/skills` path. The skill itself is runtime-agnostic: it drives a shell
 binary and reads JSON, so it works the same in Claude Code, Codex, Gemini CLI,
 and Copilot CLI.
+
+`raidr token <apiHost>` gets a site's auth token for raidr's hosted MCP
+server without copying it out of DevTools. It opens the site's sign-in page in
+a real browser window on your machine (installed Chrome, then Edge, then
+Playwright Chromium) with a persistent profile in `~/.raidr/browser`, so you
+sign in once. When a request carrying your token to a signed-in-only endpoint
+succeeds, the window closes and the token is saved to `~/.raidr/config.json`
+under `siteTokens` (mode 0600). Your password never leaves the browser.
+`--print` also writes the token to stdout:
+
+```bash
+SITE_TOKEN=$(bunx --package @sudobility/raidr_cli raidr token api.example.com --print)
+```
+
+How the site sends its token comes from the host's API doc on raidr.app,
+fetched with the `apiKey` in `~/.raidr/config.json`; without one, pass
+`--login <url> --style bearer|header|cookie` (plus `--header-name`,
+`--cookie-name`, `--user-path`). Exit code 2 means the window was closed
+before you were signed in.
 
 ## The split: CLI does the deterministic work, the agent does the judgment
 

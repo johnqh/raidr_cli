@@ -29,7 +29,8 @@ There is no build step and no `dist/`; users need Bun ≥ 1.2 (`engines.bun`).
 
 Release order lives in `raidr_app/scripts/push_all.sh` (raidr_cli publishes after
 raidr_processor). Nothing in the family depends on raidr_cli; its consumers are
-end users (`bun add -g`) and coding agents via the skill.
+end users (`bun add -g`), coding agents via the skill, and the MCP skills
+raidr_crawler generates, which run `raidr token` through `bunx`.
 
 ## Commands
 
@@ -39,7 +40,7 @@ Observed on this checkout (Bun 1.4.2):
 |---|---|---|
 | `bun install --frozen-lockfile` | Install deps | pass, no changes |
 | `bun run typecheck` | `tsc --noEmit` over src, tests, scripts, fixtures/api | pass |
-| `bun run test:unit` | `bun test` on the listed dirs (excludes `tests/capture`) | pass — 61 tests, 9 files, ~9 s |
+| `bun run test:unit` | `bun test` on the listed dirs (excludes `tests/capture`) | pass — 66 tests, 10 files, ~7 s |
 | `bun src/cli.ts` | Prints usage, exits 1 | as expected |
 | `bun test tests/capture` | Real-browser capture harness | **fails here**: Playwright Chromium not installed; also needs `fixtures:build` first |
 | `bun run fixtures:build` | `bun install && bun run build` in each `fixtures/apps/*` | not run (network; writes fixture `node_modules`/`dist`) |
@@ -53,7 +54,9 @@ says) also picks up `tests/capture` and fails without a browser — use
 
 ```
 src/
-  cli.ts                  bin entry; dispatches reconstruct | install | uninstall (lazy imports)
+  cli.ts                  bin entry; dispatches reconstruct | token | install | uninstall (lazy imports)
+  commands/token.ts       `raidr token <apiHost>`: sign in in a headed browser, save the site token
+  token/watcher.ts        CredentialWatcher: when a request's token counts as signed in
   commands/reconstruct.ts the pipeline: stages 01–07, mode choice, project + replay/proxy server codegen, report.md
   commands/install.ts     symlinks skills/reconstruct into ~/.claude|.codex|.agents/skills/raidr-reconstruct
   bundle/load.ts          zip-or-dir → LoadedBundle; validateManifest; content map keyed by hash
@@ -92,6 +95,40 @@ was mirrored, else `inference`. In mirror mode `server/replay.ts` is a live
 **proxy** to the real origin by default; `--replay` switches to serving
 `recordings.json`. The JSON report is printed to stdout.
 
+### `raidr token <apiHost> [--print]`
+
+Gets a site's auth token without the user copying it from DevTools.
+Generated MCP skills (raidr_crawler `src/pipeline/skill.ts`) tell the agent
+to run `bunx --package @sudobility/raidr_cli raidr token <apiHost> --print`;
+it lives here rather than in raidr_crawler so that skills never name the
+crawler.
+
+1. **Target.** By default it fetches `GET /api/v1/apis/<apiHost>` from
+   raidr_api (`--api-url`, then `RAIDR_API_URL`, then `apiUrl` in
+   `~/.raidr/config.json`, then `https://api.raidr.app`) with the `apiKey` in
+   that file; exits 1 if there is none. `targetFromDoc` takes `auth.user`
+   (style, header/cookie name, `tokenPrefix`), `loginUrl` (else the first site
+   origin, else `baseUrl`) and every `auth: 'user'` endpoint path as
+   `userPaths`. With `--login <url> --style bearer|header|cookie` it skips the
+   doc; `--header-name`, `--cookie-name` and repeatable `--user-path` fill the
+   rest. A host whose style is `none` prints that and exits 0.
+2. **Browser.** Playwright `launchPersistentContext`, headed, on the profile
+   `~/.raidr/browser` (`RAIDR_BROWSER_PROFILE` overrides), so later runs reuse
+   the session. Tries installed Chrome, then Edge, then Playwright Chromium;
+   `--channel` pins one and does not fall back.
+3. **Verification** (`CredentialWatcher`, the same rule as raidr_extension's
+   `TokenCapture`): requests to `apiHost` are read with raidr_types
+   `extractCredential`; a token is accepted once a request carrying it to a
+   `userPaths` path (`matchesPathTemplate`) answers 2xx, or any 2xx when
+   `userPaths` is empty. Then the browser closes.
+4. **Window closed first** (or `--timeout-ms`, default 600000, runs out):
+   null, unless `userPaths` is empty, in which case the last token seen comes
+   back unverified. Null exits **2**.
+5. **Save.** `saveSiteToken` writes `siteTokens[apiHost] = { token, savedAt }`
+   into `~/.raidr/config.json`, keeping every other field, mode 0600 (dir
+   0700). `--print` also writes the token alone to stdout; every message goes
+   to stderr.
+
 ## Invariants (easy to break)
 
 - **`src/introspect/probes.ts` must stay byte-identical** to
@@ -122,6 +159,11 @@ was mirrored, else `inference`. In mirror mode `server/replay.ts` is a live
   when", no " then/first/step/stage ", < 1024 chars), that every `.raidr/`
   artifact name appears, the four completion-report headings, no `jq`
   invocation, and the install commands/paths in INSTALL.md.
+- **`raidr token` must not accept a guest token.** Keep the verification rule
+  identical to raidr_extension's `src/background/tokenCapture.ts`; both use
+  raidr_types `extractCredential` and `matchesPathTemplate`.
+- **`raidr token --print` keeps stdout to the token alone.** Skills capture it
+  with `$(…)`; anything else goes to stderr.
 - Redaction happens at capture time in raidr_processor (e.g. it deliberately
   leaves `x-api-key` alone); this repo never re-redacts.
 
@@ -154,6 +196,11 @@ bump the dependency.
 useful → add the artifact to SKILL.md Quick Reference and to the artifact list
 in `tests/skills/skillFormat.test.ts` → test in `tests/stages/`.
 
+**Change what counts as a site token**: `extractCredential` lives in
+raidr_types and is shared with raidr_extension; change it there. The
+signed-in rule is `src/token/watcher.ts` here and `tokenCapture.ts` in the
+extension; change both. Tests: `tests/token/`.
+
 **Add a CLI command**: `src/commands/<name>.ts` exporting `run<Name>(argv)` →
 a `case` in `src/cli.ts` plus the usage string → `tests/commands/` → README
 Usage section.
@@ -176,7 +223,12 @@ raidr_processor.
 - `reconstruct()` does not clear `--out`; stale files from a previous run survive.
 - `emitFiles` swallows prettier errors on purpose; unformatted output is not a bug.
 - `recoveryRatio` is an integer percent (0–100), not a fraction.
-- `capture/harness.ts` imports Playwright (a devDependency) but ships in `src/`;
-  the CLI never imports it, so installs without devDeps still work.
+- `playwright` is a runtime dependency because `raidr token` launches a
+  browser. `capture/harness.ts` also imports it but the CLI never does.
+- `raidr token` does not download a browser: with no Chrome or Edge installed
+  it needs Playwright Chromium (`bunx playwright install chromium`).
+- With `--login/--style` instead of the API doc, pass `--token-prefix` when a
+  `header`-style site puts text before the token; without it `header` strips
+  nothing and `bearer` strips `Bearer `.
 - The comment block above `mode` in `reconstruct.ts` contains two overlapping
   paragraphs from different revisions; the second is the current rule.

@@ -12,6 +12,11 @@ switch (command) {
     await runReconstruct(rest);
     break;
   }
+  case 'token': {
+    const { runToken } = await import('./commands/token');
+    await runToken(rest);
+    break;
+  }
   case 'install': {
     const { runInstall } = await import('./commands/install');
     await runInstall(rest);
@@ -26,6 +31,7 @@ switch (command) {
     console.error(
       'usage:\n' +
         '  raidr reconstruct <bundle.zip|dir> --out <dir>\n' +
+        '  raidr token <apiHost> [--print]   sign in to a site in a local browser; saves its token to ~/.raidr/config.json\n' +
         '  raidr install [--claude] [--codex] [--agents] [--all]\n' +
         '  raidr uninstall [--claude] [--codex] [--agents]'
     );
