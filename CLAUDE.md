@@ -59,7 +59,7 @@ src/
   token/watcher.ts        CredentialWatcher: when a request's token counts as signed in
   commands/reconstruct.ts the pipeline: stages 01–07, mode choice, project + replay/proxy server codegen, report.md
   commands/install.ts     symlinks skills/reconstruct into ~/.claude|.codex|.agents/skills/raidr-reconstruct
-  bundle/load.ts          zip-or-dir → LoadedBundle; validateManifest; content map keyed by hash
+  bundle/load.ts          zip-or-dir file I/O → raidr_processor's readBundle/unzipBundle (LoadedBundle)
   stages/unpack.ts        stage 3: prettier-beautify JS chunks, split webpack modules without an AST
   stages/mirror.ts        stage 5b: write served bytes to public/, snapshot fallback for client routes
   emit.ts                 write files, prettier-format when possible (never fails on format errors)
@@ -81,7 +81,7 @@ sequences them and does the I/O. Artifacts go to `<dir>/.raidr/`:
 | Stage | Writes | Notes |
 |---|---|---|
 | 1 | `01-bundle.json` | manifest, gaps, redaction table — gaps first |
-| 2 | `02-sources/` | original sources from source maps (`recoverSources`) |
+| 2 | `02-sources/` | original sources from source maps (raidr_processor's `recoverBundleSources`) |
 | 3 | `03-chunks/` | only when recovery ratio < 80 (`unpackChunks`) |
 | 4 | `04-api-model.json`, `recordings.json` | XHR/Fetch only, OPTIONS excluded; recordings keyed by `endpointKey` |
 | 5 | `05-route-model.json` | runtime router table, or derived from Document requests (`source` field says which) |
@@ -184,8 +184,8 @@ crawler.
 ## Common changes
 
 **Use a new bundle field** (added in raidr_processor): publish raidr_processor
-first → bump `@sudobility/raidr_processor` here → read it in
-`src/bundle/load.ts` (`LoadedBundle` + loader) → consume in
+first (read it in raidr_processor's `src/bundle/read.ts`, `LoadedBundle` +
+`readBundle`) → bump `@sudobility/raidr_processor` here → consume in
 `src/commands/reconstruct.ts` → if the capture harness should emit it,
 `src/capture/harness.ts` → regenerate bundles only if needed.
 

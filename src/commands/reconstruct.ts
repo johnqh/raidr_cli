@@ -17,9 +17,7 @@ import {
   generateProject,
   generateReplayServer,
   generateTypes,
-  parseSourceMap,
-  recoverSources,
-  recoveryRatio,
+  recoverBundleSources,
   type EndpointSample,
   type StackFingerprint,
 } from '@sudobility/raidr_processor';
@@ -100,26 +98,9 @@ export async function reconstruct(options: {
   });
 
   // Stage 2 — source-map recovery.
-  const recovered: Record<string, string> = {};
-  let mappedBytes = 0;
-  let totalJsBytes = 0;
-  for (const request of bundle.requests) {
-    if (!request.mimeType?.includes('javascript') || !request.responseBodyHash) continue;
-    const size = bundle.content.get(request.responseBodyHash)?.byteLength ?? 0;
-    totalJsBytes += size;
-
-    const mapHash = bundle.sourceMaps[request.url];
-    if (!mapHash) continue;
-    const mapText = bundle.text(mapHash);
-    if (mapText === null) continue;
-    const map = parseSourceMap(mapText);
-    if (!map) continue;
-
-    mappedBytes += size;
-    for (const file of recoverSources(map)) recovered[file.path] = file.content;
-  }
-
-  const ratio = recoveryRatio({ mappedBytes, totalBytes: totalJsBytes });
+  const sources = recoverBundleSources(bundle);
+  const recovered: Record<string, string> = Object.fromEntries(sources.files.map((f) => [f.path, f.content]));
+  const ratio = sources.ratio;
   if (Object.keys(recovered).length > 0) {
     await emitFiles(join(raidrDir, '02-sources'), recovered);
   }
