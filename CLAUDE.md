@@ -40,7 +40,7 @@ Observed on this checkout (Bun 1.4.2):
 |---|---|---|
 | `bun install --frozen-lockfile` | Install deps | pass, no changes |
 | `bun run typecheck` | `tsc --noEmit` over src, tests, scripts, fixtures/api | pass |
-| `bun run test:unit` | `bun test` on the listed dirs (excludes `tests/capture`) | pass — 66 tests, 10 files, ~7 s |
+| `bun run test:unit` | `bun test` on the listed dirs (excludes `tests/capture`) | pass — 69 tests, 11 files, ~8 s (2026-10-04) |
 | `bun src/cli.ts` | Prints usage, exits 1 | as expected |
 | `bun test tests/capture` | Real-browser capture harness | **fails here**: Playwright Chromium not installed; also needs `fixtures:build` first |
 | `bun run fixtures:build` | `bun install && bun run build` in each `fixtures/apps/*` | not run (network; writes fixture `node_modules`/`dist`) |
@@ -63,6 +63,7 @@ src/
   stages/unpack.ts        stage 3: prettier-beautify JS chunks, split webpack modules without an AST
   stages/mirror.ts        stage 5b: write served bytes to public/, snapshot fallback for client routes
   emit.ts                 write files, prettier-format when possible (never fails on format errors)
+  paths.ts                safeRelativePath: shortens path segments over 200 bytes (URL-derived names hit ENAMETOOLONG)
   introspect/probes.ts    page-evaluated probes (framework, routes, chunks, links, DOM) — SHARED FILE, see below
   capture/harness.ts      test/fixture-only Playwright capture → bundle zip (not used by the CLI)
 skills/reconstruct/       SKILL.md (the agent procedure) + INSTALL.md

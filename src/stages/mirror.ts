@@ -6,6 +6,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { LoadedBundle } from '../bundle/load';
+import { safeRelativePath } from '../paths';
 
 /** Resource types that make up the site as it was actually served. */
 const MIRRORED = new Set([
@@ -55,13 +56,15 @@ function toDiskPath(url: string, isDocument: boolean): string | null {
     pathname += '/index.html';
   }
 
-  return pathname.replace(/^\/+/, '');
+  // Over-long segments (tracking pixels) are shortened to fit the file system.
+  return safeRelativePath(pathname.replace(/^\/+/, ''));
 }
 
 /**
  * Write one mirror file. A URL path can be both a file and a directory on the
  * web (`/beacon.min.js` and `/beacon.min.js/v8`), but not on disk; the path
- * written second loses and is skipped. Returns whether the file was written.
+ * written second loses and is skipped, as is a path still too long for the
+ * file system as a whole. Returns whether the file was written.
  */
 async function writeMirrorFile(path: string, body: Uint8Array): Promise<boolean> {
   try {
@@ -70,7 +73,7 @@ async function writeMirrorFile(path: string, body: Uint8Array): Promise<boolean>
     return true;
   } catch (error) {
     const code = (error as { code?: string }).code;
-    if (code === 'EEXIST' || code === 'ENOTDIR' || code === 'EISDIR') return false;
+    if (code === 'EEXIST' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ENAMETOOLONG') return false;
     throw error;
   }
 }
@@ -84,8 +87,9 @@ async function writeMirrorFile(path: string, body: Uint8Array): Promise<boolean>
  * Only GETs with a captured body and no 3xx+ status are written, limited to
  * {@link MIRRORED} resource types plus Fetch/XHR responses that look like static
  * data files. The first capture of a path wins; paths containing `..` are
- * dropped; extensionless documents become `<path>/index.html`; a path that
- * collides with an earlier file/directory on disk is skipped.
+ * dropped; extensionless documents become `<path>/index.html`; over-long
+ * segments are shortened (`safeRelativePath`); a path that collides with an
+ * earlier file/directory on disk is skipped.
  */
 export async function emitMirror(
   bundle: LoadedBundle,

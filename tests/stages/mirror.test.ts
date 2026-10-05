@@ -108,3 +108,22 @@ test('a path that is both a file and a directory on the web does not abort the m
   expect(result.paths).toContain('/beacon.min.js');
   expect(result.paths).not.toContain('/beacon.min.js/v8c78df7c7');
 });
+
+test('a tracking pixel whose path segment exceeds the file-name limit is shortened, not fatal', async () => {
+  // A DoubleClick floodlight URL put a 1 KB `activityi;…` segment in the path:
+  // mkdir failed with ENAMETOOLONG and the whole reconstruction aborted.
+  await rm(OUT, { recursive: true, force: true });
+  const bundle = await loadBundle(`${import.meta.dir}/../../fixtures/bundles/react-sample.zip`);
+  const segment = `activityi;dc_pre=CMTB9MOhopcDFcAGRAgdxokHRQ;src=13040738;${'u1=www.example.com%2F;'.repeat(60)}`;
+  bundle.content.set('h-pixel', new TextEncoder().encode('<html></html>'));
+  bundle.requests.push({
+    id: 'h-pixel', ts: 0, method: 'GET', url: `https://ad.doubleclick.net/${segment}`, resourceType: 'Document', requestHeaders: {}, requestBodyHash: null,
+    status: 200, responseHeaders: {}, responseBodyHash: 'h-pixel', mimeType: 'text/html', fromCache: false, navigationId: null,
+  });
+
+  const result = await emitMirror(bundle, OUT);
+  const written = result.paths.find((p) => p.startsWith('/activityi;'))!;
+  expect(written).toBeDefined();
+  expect(written.split('/').every((s) => Buffer.byteLength(s) <= 200)).toBe(true);
+  expect(await readFile(`${OUT}${written}`, 'utf8')).toBe('<html></html>');
+});
